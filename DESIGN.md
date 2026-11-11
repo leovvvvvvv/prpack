@@ -243,4 +243,58 @@ panel/         （Phase 2）CEP 扩展：HTML/JS 面板 + ExtendScript 取箱树
 
 ---
 
-_Phase 1 已完成。下一步按第 7 节核对结果推进 Phase 2（CEP 面板）。_
+## 9. v0.2.1 修正：序列识别 + 解析进度（2026-11-11）
+
+真实工程（`2026喀交会宣传片_Z盘版.prproj`，19 MB / 66 MB XML / 2518 面板项 / 16 个序列定义）
+暴露出两个新坑，都不是脚本写错，是 PR 的工程文件本身有两套名字、一套会重复的 ID。
+
+### 9.1 `ObjectID` 并不全局唯一
+
+`<PremiereData>` 下所有对象是平铺的，`ObjectID` 实测出现 **3780 个重复值**
+（`ObjectID="82"` 两处、`ObjectID="1104"` 两处）。`by_id` 取第一个出现的元素，
+于是 `Clip ObjectRef="82"` 可能被解到一个完全无关的 `EditTextColumn`。
+
+结论：
+- `ObjectUID` 可信（GUID，全局唯一），引用一律优先走 UID。
+- `ObjectRef` 走引用图只能当**线索**，不能当结论。`_link_sequences` 里引用遍历
+  找到的序列，必须名字也对得上才采信，否则退回名字匹配。
+
+### 9.2 面板名 ≠ 序列名
+
+一个 `ClipProjectItem` 有两处名字：
+
+| 位置 | 含义 | 是否跟 `<Sequence>/Name` 同步 |
+|---|---|---|
+| `ProjectItem/Name` | 项目面板上显示的名字 | 复制/改名后经常是残留 |
+| `MasterClip/Name` | 母剪辑名 | 与序列名一致 |
+
+实测：两个条目的面板名都是「0920第十七届喀交会 (Resolve) - 简化 - 简化」，
+其中一条的 MasterClip 名却是「**0920第十七届喀交会-1104**」。
+只按面板名对序列 → 两条并成一条，1104 的序列定义变成孤儿（面板上看不见）。
+
+修法：`BinEntry.aliases = [MasterClip/Name, ProjectItem/Name]`，
+判 `is_seq` 和认领序列定义都按这个顺序试；`SequenceInfo.name` 一律取序列定义自己的名字。
+
+### 9.3 进度协议
+
+桥接层统一推 `{"ev":"progress","pct":int|null,"msg":"阶段名","done":n,"total":m,"cur":"路径"}`：
+
+- `pct` 是**阶段权重**，不是真实耗时比例 —— 权重按实测拆：
+  读盘 2→10、解压 →20、ET 解析 →45、索引 →55、媒体 →62、序列定义 →70、
+  箱树 →80、名字匹配 →86、序列展开 86→98（按条数分）、清单 →100。
+- 规划阶段：范围 2 → 条目 8 → 落位 14，逐文件 16→90（每 20 个推一次），依赖 95、离线 98。
+- 执行阶段：复制占 2→86（按文件数），改路径 88，自检 94，完成 100。
+- `pct: null` 表示**该阶段耗时不可预知**，面板播不确定态（跑马灯），不是错误。
+
+顺带修掉三处「慢在看不见的地方」：
+
+1. `stats()` 原来 `os.path.exists` 扫一遍、`plan` 里 `os.path.getsize` 再扫一遍 ——
+   网络盘上 2300 个文件各一秒多。现在合并成一次 `getsize`，同时得出体积和离线数。
+2. `build_plan` 里 `next(e.filepath for e in model.media_items() if norm_key(...) == k)`
+   是 O(n²)（2300 × 2493 次 `abspath`）。改成先建 `path_by_key` 字典。
+3. `do_plan` 结尾又调了一次 `model.stats()` 只为拿一个 `unique_files`，直接换成 `len(model.media_files)`。
+
+### 9.4 回归测试
+
+`tests/test_sequences.py::TestStaleItemName` 造了一个「两个条目面板名相同、
+MasterClip 名不同」的合成工程，锁住 9.2：两条序列都得可见、不能并成一条、各自带自己的素材。

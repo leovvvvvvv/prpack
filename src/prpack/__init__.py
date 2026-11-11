@@ -7,7 +7,7 @@
   - 先出计划，人工核对后再执行
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 from .prproj import ProjectModel, BinEntry, SequenceInfo, sanitize_name, norm_key  # noqa: F401
 from .plan import Plan, PlanFile, build_plan  # noqa: F401

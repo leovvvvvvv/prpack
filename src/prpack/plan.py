@@ -158,12 +158,23 @@ def build_plan(
     skip_unmatched: bool = False,
     sequence_uids: Optional[List[str]] = None,
     prune: Optional[bool] = None,
+    progress=None,
 ) -> Plan:
     """生成打包计划。只读，不复制任何文件。
 
     sequence_uids 给了就只打这些序列（含嵌套递归）用到的素材；
     prune 默认在「选了序列」时为 True —— 新工程里把没选中的序列和没用到的素材摘掉。
+
+    progress(pct, msg) 可选：算落位时要逐个文件取体积（网络盘上很慢），
+    必须给面板一个动的东西，否则看起来就是卡死。
     """
+    def step(pct: int, msg: str) -> None:
+        if progress:
+            try:
+                progress(pct, msg)
+            except Exception:   # noqa: BLE001
+                pass
+
     output_root = Path(output_root).resolve()
     plan = Plan(
         project_path=str(model.path),
@@ -173,6 +184,7 @@ def build_plan(
     )
 
     # 0. 序列范围
+    step(2, "计算选中序列的素材范围")
     scope_files: Optional[Set[str]] = None
     scope_seqs: Set[str] = set()
     if sequence_uids:
@@ -212,6 +224,7 @@ def build_plan(
         return scope_files is None or norm_key(fp) in scope_files
 
     # 1. 收集：物理文件 → 候选落位
+    step(8, "整理素材条目")
     cand: Dict[str, List[Tuple[Tuple[str, ...], str]]] = {}
     for e in model.media_items():
         if not e.filepath or not in_scope(e.filepath):
@@ -219,17 +232,27 @@ def build_plan(
         cand.setdefault(norm_key(e.filepath), []).append((e.bin_path, e.name))
 
     # 2. 每个物理文件选一个落位（层级最浅，其次字母序）
+    step(14, "选择落位")
     chosen: List[Tuple[str, Tuple[str, ...], str, List[Tuple[str, ...]]]] = []
+    path_by_key: Dict[str, str] = {}
+    for e in model.media_items():
+        if e.filepath:
+            path_by_key.setdefault(norm_key(e.filepath), e.filepath)
     for k, entries in cand.items():
         entries.sort(key=lambda x: (len(x[0]), x[0], x[1]))
         bin_path, name = entries[0]
         others = [b for b, _ in entries[1:] if b != bin_path]
-        src = next(e.filepath for e in model.media_items() if norm_key(e.filepath) == k)
+        src = path_by_key[k]
         chosen.append((src, bin_path, name, others))
 
     # 3. 落位计算 + 冲突处理
+    total_chosen = max(1, len(chosen))
     taken: Dict[str, str] = {}   # dst_rel.lower() -> src
-    for src, bin_path, name, others in sorted(chosen, key=lambda x: (x[1], Path(x[0]).name)):
+    for i, (src, bin_path, name, others) in enumerate(
+        sorted(chosen, key=lambda x: (x[1], Path(x[0]).name)), 1
+    ):
+        if i % 20 == 0 or i == total_chosen:
+            step(16 + int(i * 74 / total_chosen), f"计算落位 {i}/{total_chosen}")
         fname = PurePath(src).name
         parts = [sanitize_name(b) for b in bin_path] + [sanitize_name(fname, "file")]
 
@@ -255,6 +278,7 @@ def build_plan(
         )
 
     # 4. 兜底：范围内但没被任何条目认领的文件，宁可多收，绝不丢
+    step(92, "补齐未认领的物理文件")
     covered = {norm_key(f.src) for f in plan.files}
     if scope_files is not None:
         extra = [fp for fp in model.media_files
@@ -278,6 +302,7 @@ def build_plan(
 
     # 5. 依赖文件
     if include_deps:
+        step(95, "收集依赖（BRAW / R3D / 同名 aep）")
         existing = {norm_key(f.src) for f in plan.files}
         for f in list(plan.files):
             for dep in _deps_for(f.src):
@@ -296,6 +321,7 @@ def build_plan(
                 )
 
     # 6. 离线检查
+    step(98, "检查离线文件")
     offline = [f for f in plan.files if not f.exists]
     if offline:
         plan.warnings.append(f"{len(offline)} 个源文件离线（不存在）：")

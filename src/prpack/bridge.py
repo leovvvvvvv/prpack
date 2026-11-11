@@ -38,6 +38,11 @@ def _gb(n: int) -> str:
     return f"{n / 1024 ** 3:.2f} GB"
 
 
+def _progress(pct: int, msg: str, **kw) -> None:
+    """解析/规划阶段的进度。pct 为 None 时面板显示不确定态（跑马灯）。"""
+    emit("progress", pct=pct, msg=msg, **kw)
+
+
 def _split_seq(raw: str | None) -> list[str] | None:
     """--sequences 支持逗号分隔的 uid / uid 前缀 / 序列名。"""
     if not raw:
@@ -72,10 +77,13 @@ def _resolve_project(raw: str) -> Path:
 # ---------------------------------------------------------------- inspect
 
 def do_inspect(project: str) -> int:
-    emit("log", msg="正在解析工程…")
-    model = ProjectModel.load(_resolve_project(project))
+    _progress(1, "正在解析工程…")
+    model = ProjectModel.load(_resolve_project(project), progress=_progress)
+    # 网络盘上 os.path.exists 挨个问一遍要一秒多，必须先进度再统计
+    _progress(91, "统计文件与离线检查")
     s = model.stats()
 
+    _progress(96, "生成素材清单")
     tree = []
     for it in model.media_items():
         tree.append({"bin": "/".join(it.bin_path), "name": it.name, "file": it.filepath})
@@ -92,6 +100,7 @@ def do_inspect(project: str) -> int:
         for i in model.visible_sequences()
     ]
 
+    _progress(100, "分析完成")
     emit(
         "result",
         ok=True,
@@ -107,6 +116,8 @@ def do_inspect(project: str) -> int:
                 "orphan_sequences": s["orphan_sequences"],
                 "media_items": s["media_items"],
                 "unique_files": s["unique_files"],
+                "total_bytes": s["total_bytes"],
+                "total_text": _gb(s["total_bytes"]),
                 "unmatched": s["unmatched"],
                 "offline": s["offline"],
             },
@@ -123,17 +134,17 @@ def do_plan(project: str, output: str, mode: str = "bin",
             skip_unmatched: bool = False, include_deps: bool = True,
             plan_out: str | None = None, sequences: list[str] | None = None,
             prune: bool | None = None) -> int:
-    emit("log", msg="正在解析工程…")
-    model = ProjectModel.load(_resolve_project(project))
+    _progress(1, "正在解析工程…")
+    model = ProjectModel.load(_resolve_project(project), progress=_progress)
 
     if sequences:
         emit("log", msg=f"已选 {len(sequences)} 条序列，正在展开嵌套与素材…")
 
-    emit("log", msg="正在计算去重与目标路径…")
+    _progress(None, "正在计算去重与目标路径…")
     plan = build_plan(
         model, Path(output), mode=mode,
         include_deps=include_deps, skip_unmatched=skip_unmatched,
-        sequence_uids=sequences, prune=prune,
+        sequence_uids=sequences, prune=prune, progress=_progress,
     )
     pp = Path(plan_out) if plan_out else Path(output).parent / f"{model.path.stem}_plan.json"
     plan.save(pp)
@@ -146,6 +157,7 @@ def do_plan(project: str, output: str, mode: str = "bin",
         dirs[key] = dirs.get(key, 0) + 1
     top = sorted(dirs.items(), key=lambda kv: -kv[1])[:40]
 
+    _progress(100, "计划已生成")
     emit(
         "result",
         ok=True,
@@ -163,7 +175,7 @@ def do_plan(project: str, output: str, mode: str = "bin",
             "dirs": [{"path": k, "count": v} for k, v in top],
             "conflicts": len(plan.conflicts),
             "warnings": plan.warnings,
-            "source_files": model.stats()["unique_files"],
+            "source_files": len(model.media_files),
         },
     )
     return 0
@@ -182,16 +194,18 @@ def do_run(plan_path: str, force: bool = False) -> int:
     last = {"pct": -1}
 
     def on_progress(i: int, total: int, f) -> None:
-        pct = int(i * 100 / total) if total else 0
+        # 复制占整体进度 2%–86%，剩下的留给改路径和自检
+        pct = 2 + int(i * 84 / total) if total else 2
         # 每 1% 或最后一个才推，避免刷屏
         if pct != last["pct"] or i == total:
             last["pct"] = pct
-            emit("progress", done=i, total=total, pct=pct, cur=f.dst_rel)
+            emit("progress", done=i, total=total, pct=pct, msg="复制素材",
+                 cur=f.dst_rel)
 
     copy_res = copy_plan(plan, plan_file=Path(plan_path), progress=on_progress)
     emit("log", msg=f"复制完成：成功 {copy_res.copied} / 跳过 {copy_res.skipped} / 失败 {copy_res.failed}")
 
-    emit("log", msg="正在改写工程内路径…")
+    _progress(88, "正在改写工程内路径…")
     original = ProjectModel.load(Path(plan.project_path))
     relink_res = relink_project(plan, update_relative=True, model=original)
     if relink_res.pruned_items:
@@ -199,7 +213,7 @@ def do_run(plan_path: str, force: bool = False) -> int:
                         f"{relink_res.pruned_bins} 个空箱")
     emit("log", msg=f"新工程：{relink_res.output_path}")
 
-    emit("log", msg="正在自检…")
+    _progress(94, "正在自检…")
     verify_res = verify_package(original, Path(relink_res.output_path), plan)
 
     report = out_root / "打包报告.md"

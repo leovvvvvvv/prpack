@@ -267,5 +267,106 @@ class TestSequenceScope(unittest.TestCase):
         self.assertEqual(self.proj.read_bytes(), before)
 
 
+def make_stale_name_project(root: Path) -> Path:
+    """面板名和 MasterClip 名不一致的工程 —— 迭代 PR 工程的常见残留。
+
+    实测喀交会工程（2026-11-11）：两个 ClipProjectItem 的面板名都是
+    「旧名字」，但它们的 MasterClip 分别是「真名A」「真名B」。
+    只按面板名对序列，会把它俩认成同一条序列，真名B 就成了孤儿（面板上看不见）。
+
+        素材箱 A：a.mp4, b.mp4
+        ClipProjectItem(面板名=旧名字, MasterClip=mc-a→真名A) → 序列 真名A（用 a.mp4）
+        ClipProjectItem(面板名=旧名字, MasterClip=mc-b→真名B) → 序列 真名B（用 b.mp4）
+    """
+    files = ["a.mp4", "b.mp4"]
+    media_xml, clips_xml = [], []
+    for i, fname in enumerate(files):
+        fp = root / fname
+        fp.write_bytes(b"\x00" * 512)
+        media_xml.append(
+            f'<Media ObjectUID="m-{i}"><FilePath>{fp}</FilePath>'
+            f"<Title>{fname}</Title></Media>"
+        )
+        clips_xml.append(
+            f'<ClipProjectItem ObjectUID="c-{i}">'
+            f"<ProjectItem><Node><ID>{200 + i}</ID></Node><Name>{fname}</Name></ProjectItem>"
+            f'<MasterClip ObjectURef="mc-{i}"/></ClipProjectItem>'
+        )
+
+    # 序列项目项：面板名相同，MasterClip 名不同
+    for i, real in enumerate(["真名A", "真名B"]):
+        clips_xml.append(
+            f'<ClipProjectItem ObjectUID="item-{i}">'
+            f"<ProjectItem><Node><ID>{300 + i}</ID></Node><Name>旧名字</Name></ProjectItem>"
+            f'<MasterClip ObjectURef="smc-{i}"/></ClipProjectItem>'
+            f'<MasterClip ObjectUID="smc-{i}"><Name>{real}</Name></MasterClip>'
+        )
+
+    seqs = []
+    for i, real in enumerate(["真名A", "真名B"]):
+        seqs.append(
+            f'<Sequence ObjectUID="seq-{i}"><TrackGroups Version="1">'
+            f'<TrackGroup Version="1" Index="0"><Second ObjectRef="{700 + i}"/></TrackGroup>'
+            f"</TrackGroups><Name>{real}</Name></Sequence>"
+            f'<VideoTrackGroup ObjectID="{700 + i}"><Track><ClipItems>'
+            f'<ClipTrackItem Version="8"><SubClip ObjectRef="{710 + i}"/></ClipTrackItem>'
+            f"</ClipItems></Track></VideoTrackGroup>"
+            f'<Clip ObjectID="{710 + i}"><Source ObjectURef="m-{i}"/></Clip>'
+        )
+
+    root_items = "".join(
+        f'<Item Index="{i}" ObjectURef="item-{i}"/>' for i in range(2)
+    )
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?><Project>'
+        '<RootProjectItem ObjectUID="root"><ProjectItemContainer><Items>'
+        + root_items
+        + "</Items></ProjectItemContainer></RootProjectItem>"
+        + "".join(clips_xml)
+        + "".join(media_xml)
+        + "".join(seqs)
+        + "</Project>"
+    )
+    out = root / "stale.prproj"
+    out.write_bytes(gzip.compress(xml.encode("utf-8")))
+    return out
+
+
+class TestStaleItemName(unittest.TestCase):
+    """面板名 ≠ MasterClip 名时，序列身份必须以 MasterClip 名为准。"""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+        self.m = ProjectModel.load(make_stale_name_project(self.root))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_both_sequences_visible(self):
+        names = sorted(i.name for i in self.m.visible_sequences())
+        self.assertEqual(names, ["真名A", "真名B"])
+
+    def test_not_collapsed_into_one(self):
+        """两个同名面板项不能并成一条序列 —— 并了就等于丢一条。"""
+        self.assertEqual(len(self.m.visible_sequences()), 2)
+
+    def test_each_has_its_own_media(self):
+        a = self.m.find_sequence("真名A")
+        b = self.m.find_sequence("真名B")
+        self.assertIsNotNone(a)
+        self.assertIsNotNone(b)
+        self.assertNotEqual(a.uid, b.uid)
+        self.assertEqual({Path(p).name for p in a.files}, {"a.mp4"})
+        self.assertEqual({Path(p).name for p in b.files}, {"b.mp4"})
+
+    def test_closure_by_stale_panel_name_still_works(self):
+        """面板上看到的是旧名字，但 uid 走得通 —— 面板传的就是 uid。"""
+        files, seqs, missing = self.m.media_closure(["真名B"])
+        self.assertEqual(missing, [])
+        self.assertEqual({Path(p).name for p in files}, {"b.mp4"})
+        self.assertEqual(len(seqs), 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

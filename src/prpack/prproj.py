@@ -70,6 +70,9 @@ class BinEntry:
     matched_by: str = ""      # title / basename / ""(未匹配)
     is_seq: bool = False      # 序列项目项（不需要复制媒体）
     uid: str = ""             # 对应对象的 ObjectUID（对象图定位用）
+    # 该条目可能挂在哪些名字下：MasterClip/Name 优先，其次 ProjectItem/Name。
+    # 序列改名/复制后这两处会不一致，只用面板名会认错序列（实测 2026-11-11）。
+    aliases: List[str] = field(default_factory=list)
 
     @property
     def is_sequence(self) -> bool:
@@ -123,22 +126,40 @@ class ProjectModel:
     # ---------------- 构建 ----------------
 
     @classmethod
-    def load(cls, path: Path) -> "ProjectModel":
+    def load(cls, path: Path, progress=None) -> "ProjectModel":
+        """progress(pct:int, msg:str) 可选 —— 大工程解析要几秒，面板靠它撑住等待感。"""
+        def step(pct: int, msg: str) -> None:
+            if progress:
+                try:
+                    progress(pct, msg)
+                except Exception:   # noqa: BLE001 —— 进度回调出问题不能影响解析
+                    pass
+
         path = Path(path)
+        step(2, f"读取工程文件 {path.name}")
         raw = path.read_bytes()
+        step(10, "解压 XML")
         try:
             xml_bytes = gzip.decompress(raw)
         except OSError as exc:
             raise ValueError(f"不是合法的 .prproj（gzip 解压失败）：{path}") from exc
+        step(20, "解析 XML 结构")
         root = ET.fromstring(xml_bytes)
 
         model = cls(path=path, xml_text=xml_bytes.decode("utf-8"), raw=raw)
+        step(45, "建立对象索引")
         model._index(root)
+        step(55, "收集物理文件")
         model._collect_media(root)
+        step(62, "识别序列定义")
         model._collect_sequences(root)
+        step(70, "遍历素材箱层级")
         model._walk_bins(root)
+        step(80, "匹配素材与文件")
         model._match()
-        model._link_sequences()
+        step(86, "展开序列与嵌套")
+        model._link_sequences(progress=step)
+        step(99, "解析完成")
         return model
 
     def _index(self, root: ET.Element) -> None:
@@ -261,6 +282,29 @@ class ProjectModel:
         for ch in self._container_items(root_item):
             visit(ch, ())
 
+    def _item_names(self, entry: BinEntry) -> List[str]:
+        """一个项目项可能报出的全部名字，序列身份识别用。
+
+        `ClipProjectItem/ProjectItem/Name` 是面板上显示的名字，但
+        `MasterClip/Name` 才跟 `<Sequence>/Name` 保持一致。实测喀交会工程：
+        面板名「…- 简化 - 简化」的条目，MasterClip 名却是「0920第十七届喀交会-1104」，
+        只认面板名就会把这条序列判成另一条、并让 1104 变成孤儿。两处都收，MasterClip 优先。
+        """
+        names: List[str] = []
+        el = self.by_uid.get(entry.uid) if entry.uid else None
+        if el is None and entry.uid:
+            el = self.by_id.get(entry.uid)
+        if el is not None:
+            mc = el.find("MasterClip")
+            tgt = self.deref(mc) if mc is not None else None
+            if tgt is not None:
+                nm = self._text(tgt, "Name")
+                if nm:
+                    names.append(nm)
+        if entry.name and entry.name not in names:
+            names.append(entry.name)
+        return names
+
     def _match(self) -> None:
         """按名字把 bin 树条目对到物理文件。两级：Title → 文件名（basename）。"""
         title_map: Dict[str, str] = {}
@@ -295,9 +339,12 @@ class ProjectModel:
                 e.matched_by = by
                 used.add(norm_key(fp))
 
-        # 标记序列项目项：面板名与某个 Sequence 的 Name 对得上
+        # 标记序列项目项：MasterClip 名或面板名与某个 Sequence 的 Name 对得上
         for e in self.entries:
-            if e.name in self.sequences:
+            if e.filepath:
+                continue
+            e.aliases = self._item_names(e)
+            if any(n in self.sequences for n in e.aliases):
                 e.is_seq = True
 
     # ---------------- 引用图 ----------------
@@ -362,15 +409,15 @@ class ProjectModel:
                     nested.append(u)
         return files, nested
 
-    def _link_sequences(self) -> None:
+    def _link_sequences(self, progress=None) -> None:
         """把素材箱里的序列项目项对到序列定义，并算出每条序列的物理文件闭包。
 
         ## 为什么主要靠名字对，而不是顺引用找
 
         实测 PR 26：`ClipProjectItem → MasterClip → Clips → Clip` 这一路指向的是
         **列定义**（`StringColumn` 之类），根本不是剪辑对象，往下走 48 个节点就到头，
-        永远碰不到 `<Sequence>`。所以身份识别只能靠「面板名 == Sequence/Name」，
-        这条在实际工程里是可靠的：PR 显示的就是序列名。
+        永远碰不到 `<Sequence>`。所以身份识别只能靠名字，可靠顺序是：
+        MasterClip/Name（跟 `<Sequence>/Name` 同步）→ ProjectItem/Name（面板名）。
 
         引用遍历仍然要走，但只用它来算**素材闭包**（从序列定义出发），
         不从项目项出发。
@@ -384,10 +431,23 @@ class ProjectModel:
         infos: Dict[str, SequenceInfo] = {}
         claimed: Dict[str, str] = {}      # 条目 uid → 序列 uid
 
-        for e in [x for x in self.entries if x.is_seq]:
+        todo = [x for x in self.entries if x.is_seq]
+        total = max(1, len(todo))
+
+        def tick(i: int) -> None:
+            if progress:
+                try:
+                    progress(86 + int(i * 12 / total), f"展开序列 {i}/{total}")
+                except Exception:   # noqa: BLE001
+                    pass
+
+        for idx, e in enumerate(todo, 1):
+            tick(idx)
             own = ""
 
-            # 1) 先试引用遍历（少数版本能走通）
+            # 1) 先试引用遍历（少数版本能走通）。只有名字也对得上才采信 ——
+            #    ObjectID 在 PR 工程里并不全局唯一（实测同号出现多次），
+            #    走错一个引用就会认成完全无关的序列，宁可退回名字匹配。
             el = self.by_uid.get(e.uid)
             if el is None:
                 el = self.by_id.get(e.uid)
@@ -397,17 +457,22 @@ class ProjectModel:
                         continue
                     u = x.get("ObjectUID")
                     if x.tag == "Sequence" and u in self.sequence_defs:
-                        own = u
+                        if self._text(x, "Name") in (e.aliases or [e.name]):
+                            own = u
                         break
 
-            # 2) 回退：按名字对
+            # 2) 回退：按名字对。MasterClip 名优先，其次面板名。
             if not own:
-                cands = name_to_def.get(e.name, [])
-                if len(cands) == 1:
-                    own = cands[0]
-                elif len(cands) > 1:
-                    free = [u for u in cands if u not in claimed.values()]
-                    own = (free or cands)[0]
+                for nm in (e.aliases or [e.name]):
+                    cands = name_to_def.get(nm, [])
+                    if not cands:
+                        continue
+                    if len(cands) == 1:
+                        own = cands[0]
+                    else:
+                        free = [u for u in cands if u not in claimed.values()]
+                        own = (free or cands)[0]
+                    break
 
             if not own:
                 self.warnings.append(f"序列项目项「{e.name}」找不到对应的序列定义，已保守保留")
@@ -416,7 +481,9 @@ class ProjectModel:
             claimed[e.uid] = own
             info = infos.get(own)
             if info is None:
-                info = SequenceInfo(uid=own, name=e.name, item_uid=e.uid, bin_path=e.bin_path)
+                # 名字以序列定义为准 —— 面板名可能是改名/复制后的残留
+                nm = self._text(self.sequence_defs[own], "Name") or e.name
+                info = SequenceInfo(uid=own, name=nm, item_uid=e.uid, bin_path=e.bin_path)
                 info.files, info.nested = self._seq_files_and_nested(self.sequence_defs[own])
                 info.item_uids = [e.uid]
                 infos[own] = info
@@ -470,6 +537,7 @@ class ProjectModel:
         return None
 
     def media_closure(self, keys: List[str]) -> Tuple[Set[str], Set[str], List[str]]:
+
         """选中序列 → （物理文件集合, 涉及的序列 uid 集合, 没认出来的 key）"""
         by_uid = {i.uid: i for i in self.visible_sequences()}
         start: List[str] = []
@@ -548,11 +616,24 @@ class ProjectModel:
 
     def stats(self) -> dict:
         items = self.media_items()
-        missing = [e for e in items if not os.path.exists(e.filepath)]
+        # 一次 stat 同时拿到「体积」和「离线」—— 网络盘上每多扫一遍就多等一秒
+        sizes: Dict[str, int] = {}
+        missing: List[BinEntry] = []
+        for e in items:
+            k = norm_key(e.filepath)
+            if k not in sizes:
+                try:
+                    sizes[k] = os.path.getsize(e.filepath)
+                except OSError:
+                    sizes[k] = -1
+            if sizes[k] < 0:
+                missing.append(e)
+        total_bytes = sum(v for v in sizes.values() if v > 0)
         return {
             "project": self.path.name,
             "project_path": str(self.path),
             "project_size": self.path.stat().st_size,
+            "total_bytes": total_bytes,
             "bin_count": len(self.bins),
             "bin_entries": len(self.entries),
             "sequence_items": sum(1 for e in self.entries if e.is_sequence),
