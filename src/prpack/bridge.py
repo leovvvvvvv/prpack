@@ -38,6 +38,14 @@ def _gb(n: int) -> str:
     return f"{n / 1024 ** 3:.2f} GB"
 
 
+def _split_seq(raw: str | None) -> list[str] | None:
+    """--sequences 支持逗号分隔的 uid / uid 前缀 / 序列名。"""
+    if not raw:
+        return None
+    parts = [p.strip() for p in raw.replace(";", ",").split(",")]
+    return [p for p in parts if p] or None
+
+
 def _resolve_project(raw: str) -> Path:
     """把面板传来的路径落成一个真实存在的 .prproj。
 
@@ -72,16 +80,31 @@ def do_inspect(project: str) -> int:
     for it in model.media_items():
         tree.append({"bin": "/".join(it.bin_path), "name": it.name, "file": it.filepath})
 
+    seqs = [
+        {
+            "uid": i.uid,
+            "name": i.name,
+            "bin": "/".join(i.bin_path),
+            "files": i.file_count,
+            "nested": i.nested_names,
+            "is_nested": i.is_nested,
+        }
+        for i in model.visible_sequences()
+    ]
+
     emit(
         "result",
         ok=True,
         data={
             "project": s["project"],
             "bins": ["/".join(b) for b in model.bins],
+            "sequences": seqs,
             "stats": {
                 "bin_count": s["bin_count"],
                 "bin_entries": s["bin_entries"],
                 "sequence_items": s["sequence_items"],
+                "sequence_count": s["sequence_count"],
+                "orphan_sequences": s["orphan_sequences"],
                 "media_items": s["media_items"],
                 "unique_files": s["unique_files"],
                 "unmatched": s["unmatched"],
@@ -98,14 +121,19 @@ def do_inspect(project: str) -> int:
 
 def do_plan(project: str, output: str, mode: str = "bin",
             skip_unmatched: bool = False, include_deps: bool = True,
-            plan_out: str | None = None) -> int:
+            plan_out: str | None = None, sequences: list[str] | None = None,
+            prune: bool | None = None) -> int:
     emit("log", msg="正在解析工程…")
     model = ProjectModel.load(_resolve_project(project))
+
+    if sequences:
+        emit("log", msg=f"已选 {len(sequences)} 条序列，正在展开嵌套与素材…")
 
     emit("log", msg="正在计算去重与目标路径…")
     plan = build_plan(
         model, Path(output), mode=mode,
         include_deps=include_deps, skip_unmatched=skip_unmatched,
+        sequence_uids=sequences, prune=prune,
     )
     pp = Path(plan_out) if plan_out else Path(output).parent / f"{model.path.stem}_plan.json"
     plan.save(pp)
@@ -129,6 +157,9 @@ def do_plan(project: str, output: str, mode: str = "bin",
             "total_text": _gb(plan.total_bytes),
             "mode": plan.mode,
             "output_root": plan.output_root,
+            "sequences": plan.sequence_names,
+            "prune": plan.prune,
+            "drop_items": len(plan.drop_item_uids),
             "dirs": [{"path": k, "count": v} for k, v in top],
             "conflicts": len(plan.conflicts),
             "warnings": plan.warnings,
@@ -162,7 +193,10 @@ def do_run(plan_path: str, force: bool = False) -> int:
 
     emit("log", msg="正在改写工程内路径…")
     original = ProjectModel.load(Path(plan.project_path))
-    relink_res = relink_project(plan, update_relative=True)
+    relink_res = relink_project(plan, update_relative=True, model=original)
+    if relink_res.pruned_items:
+        emit("log", msg=f"已摘除 {relink_res.pruned_items} 个条目 / "
+                        f"{relink_res.pruned_bins} 个空箱")
     emit("log", msg=f"新工程：{relink_res.output_path}")
 
     emit("log", msg="正在自检…")
@@ -235,6 +269,9 @@ def main(argv: list[str] | None = None) -> int:
                 skip_unmatched="--skip-unmatched" in rest,
                 include_deps="--no-deps" not in rest,
                 plan_out=opt("--plan-out"),
+                sequences=_split_seq(opt("--sequences")),
+                prune=(False if "--no-prune" in rest
+                       else (True if "--prune" in rest else None)),
             )
 
         if action == "run":

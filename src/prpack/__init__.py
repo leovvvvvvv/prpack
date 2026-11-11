@@ -7,15 +7,19 @@
   - 先出计划，人工核对后再执行
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
-from .prproj import ProjectModel, BinEntry, sanitize_name, norm_key  # noqa: F401
+from .prproj import ProjectModel, BinEntry, SequenceInfo, sanitize_name, norm_key  # noqa: F401
 from .plan import Plan, PlanFile, build_plan  # noqa: F401
+from .prune import PruneResult, prune_items  # noqa: F401
 
 __all__ = [
     "__version__",
     "ProjectModel",
     "BinEntry",
+    "SequenceInfo",
+    "PruneResult",
+    "prune_items",
     "sanitize_name",
     "norm_key",
     "Plan",

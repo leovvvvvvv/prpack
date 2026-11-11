@@ -59,6 +59,8 @@ def cmd_plan(args: argparse.Namespace) -> int:
         mode=args.mode,
         include_deps=not args.no_deps,
         skip_unmatched=args.skip_unmatched,
+        sequence_uids=args.sequences,
+        prune=(False if args.no_prune else (True if args.prune else None)),
     )
     plan_path = Path(args.plan_out) if args.plan_out else out_root.parent / f"{model.path.stem}_plan.json"
     plan.save(plan_path)
@@ -69,6 +71,9 @@ def cmd_plan(args: argparse.Namespace) -> int:
     print(f"  总体积        {_gb(plan.total_bytes)}")
     print(f"  冲突          {len(plan.conflicts)}")
     print(f"  结构模式      {plan.mode}")
+    print(f"  打包序列      {'、'.join(plan.sequence_names) or '全部'}")
+    if plan.prune:
+        print(f"  新工程摘除    {len(plan.drop_item_uids)} 个素材箱条目")
     for w in plan.warnings:
         print(f"  ⚠️  {w}")
     print("\n核对无误后执行：prpack run " + str(plan_path))
@@ -97,7 +102,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         print("（已跳过硬链接改写）")
     else:
         original = ProjectModel.load(Path(plan.project_path))
-        relink_res = relink_project(plan, update_relative=not args.no_relative)
+        relink_res = relink_project(
+            plan, update_relative=not args.no_relative, model=original
+        )
         print(f"新工程：{relink_res.output_path}")
         print(f"  绝对路径替换 {relink_res.replaced_abs} 处 / 相对路径 {relink_res.replaced_rel} 处 / 清临时路径 {relink_res.cleared_temp} 处")
         for w in relink_res.warnings:
@@ -126,6 +133,8 @@ def cmd_pack(args: argparse.Namespace) -> int:
     plan = build_plan(
         model, out_root, mode=args.mode,
         include_deps=not args.no_deps, skip_unmatched=args.skip_unmatched,
+        sequence_uids=args.sequences,
+        prune=(False if args.no_prune else (True if args.prune else None)),
     )
     plan_path = out_root.parent / f"{model.path.stem}_plan.json"
     plan.save(plan_path)
@@ -159,6 +168,10 @@ def build_parser() -> argparse.ArgumentParser:
     common.add_argument("--no-deps", action="store_true", help="不收集依赖文件（sidecar 等）")
     common.add_argument("--no-relative", action="store_true", help="不改写相对路径")
     common.add_argument("--force", action="store_true", help="目标目录非空也继续（危险）")
+    common.add_argument("--sequences", nargs="+", metavar="SEQ",
+                        help="只打包这些序列（uid / uid 前缀 / 序列名），支持多个")
+    common.add_argument("--prune", action="store_true", help="强制裁剪新工程（摘掉未选中的序列与未用素材）")
+    common.add_argument("--no-prune", action="store_true", help="不裁剪新工程，只限制复制的素材")
 
     sp = sub.add_parser("plan", parents=[common], help="只出计划")
     sp.add_argument("project")

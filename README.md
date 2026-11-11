@@ -32,6 +32,8 @@ Real-world measurement (a 52-minute event project, Premiere 26.x):
 
 - **Deduplicates by physical file.** 198 subclips sharing 112 files produce 112 copies. Nothing more.
 - **Preserves your bin hierarchy on disk** (`--mode bin`, default). Or the original disk layout (`--mode disk`), or flat (`--mode flat`).
+- **Packs only the sequences you pick** — and follows nested sequences all the way down, so a nested sequence's media is never missed.
+- **Slims the packed project down** to the selected sequences. Unchecked sequences and unused media are removed from the new project's bins, not just skipped during the copy.
 - **Rewrites the project's media paths** so the packed project opens with zero offline media.
 - **Shows you a plan first.** `prpack plan` writes a `plan.json` you can read before anything is copied.
 - **Verifies the result.** After packing, it re-opens the new project and checks that every path resolves.
@@ -101,11 +103,37 @@ Copies the media, rewrites the project as `my_project_packed.prproj`, verifies i
 prpack pack "D:\media\project\my_project.prproj" -o "D:\archive\my_project_packed"
 ```
 
+### Pack only some sequences
+
+A rough-cut project usually holds several versions. Shipping all of them — and all their footage — is a waste. Pick the ones you want:
+
+```bash
+# by name
+prpack plan "D:\media\project\my_project.prproj" -o "D:\archive\delivery" \
+  --sequences "Final cut" "Cut v2"
+
+# or by uid (any unique prefix works, handy when names contain spaces)
+prpack plan "..." -o "..." --sequences 7a8292ee 60ee1bcd
+```
+
+What this does:
+
+1. **Resolves the media set** for the selected sequences only. Nested sequences are expanded recursively — if sequence A sits inside sequence B, selecting B pulls in everything A uses.
+2. **Copies just that footage.** Files used only by unselected sequences are not copied at all.
+3. **Prunes the new project.** Bin entries for unselected sequences and unused media are removed, so the delivered project opens showing only what you picked. Empty bins left behind by the pruning are removed too.
+
+Pruning is on by default whenever `--sequences` is used. Pass `--no-prune` to keep the full project structure and only limit what gets copied.
+
+> How pruning works: it removes bin *entries*, not the objects behind them. Anything left unreferenced stays in the file as an inert orphan — Premiere does not show it. That is deliberate: deleting objects is how you end up with a project that refuses to open.
+
 ### Options
 
 | Flag | Meaning |
 |---|---|
 | `--mode bin\|disk\|flat` | Output layout. `bin` (default) mirrors your Premiere bins. |
+| `--sequences A B ...` | Pack only these sequences (names, uids, or uid prefixes). |
+| `--no-prune` | With `--sequences`: copy only the scoped media but keep the project structure intact. |
+| `--prune` | Without `--sequences`: still prune unused media out of the packed project. |
 | `--no-deps` | Skip dependency collection (`.sidecar`, `.RDC`, `.aep`). |
 | `--skip-unmatched` | Don't collect media that no bin item claims. |
 | `--no-relative` | Don't rewrite `RelativePath` entries. |

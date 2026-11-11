@@ -47,9 +47,10 @@
 
 ```
 src/prpack/
-  prproj.py    解析层：gzip → XML → 素材箱树 + 物理文件全集
-  plan.py      规划层：去重、算落位、查冲突 → plan.json
+  prproj.py    解析层：gzip → XML → 素材箱树 + 物理文件全集 + 序列闭包（嵌套递归）
+  plan.py      规划层：按序列裁范围、去重、算落位、查冲突 → plan.json
   copyer.py    执行层：复制 + 断点续传 + 指纹校验
+  prune.py     裁剪层：摘掉未选中序列与未用素材的素材箱条目（行级删除，不重排 XML）
   relink.py    重写层：文本级改路径（不重新序列化 XML）
   verify.py    校验层：产物自检 + 报告
   cli.py       命令行入口
@@ -206,6 +207,7 @@ panel/         （Phase 2）CEP 扩展：HTML/JS 面板 + ExtendScript 取箱树
 | `prproj.py` | ✅ | 解析 112 个物理文件、4 个素材箱、0 未匹配、0 离线 |
 | `plan.py` | ✅ | `bin` / `disk` / `flat` 三模式，去重 + 冲突检测，出 plan.json |
 | `copyer.py` | ✅ | 指纹校验、拒绝非空目录、`.part` 临时文件、断点续传 |
+| `prune.py` | ✅ | 行级摘条目 + Index 重编号 + 空箱级联；计数不符即中止 |
 | `relink.py` | ✅ | 文本级替换，先长后短，清空本机临时路径，落盘前 XML 自检 |
 | `verify.py` | ✅ | 6 项校验 + Markdown 报告 |
 | `cli.py` | ✅ | `inspect` / `plan` / `run` / `pack` 四个子命令 |

@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from .plan import Plan
-from .prproj import ProjectModel
+from .prproj import ProjectModel, norm_key
 
 
 @dataclass
@@ -32,6 +32,7 @@ class Check:
 class VerifyResult:
     checks: List[Check] = field(default_factory=list)
     report_path: str = ""
+    warnings: List[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -58,22 +59,51 @@ def verify_package(
         res.add("新工程可解析", False, str(exc))
         return res
 
-    # 2. Media 条数一致
-    res.add(
-        "媒体条数一致",
-        len(packed.media_files) == len(original.media_files),
-        f"原 {len(original.media_files)} → 新 {len(packed.media_files)}",
-    )
+    if plan.prune:
+        # 裁剪模式：只校验「能被看到的」那一部分。
+        # 工程里仍留着没人引用的孤儿对象（故意不删，见 prune.py），
+        # 它们不出现在面板上，不该参与自检。
+        # 注意：plan 里存的是**源**路径，新工程里是**包内**路径，
+        # 所以要用「落位路径」去比，不能直接比 src。
+        root_p = Path(plan.output_root)
+        expect = {
+            norm_key(str((root_p / f.dst_abs).resolve()))
+            for f in plan.files if f.role != "dep"
+        }
+        got = packed.reachable_files()
+        lacking = sorted(expect - got)
+        surplus = sorted(got - expect)
+        res.add(
+            "裁剪后素材与计划一致",
+            not lacking and not surplus,
+            f"计划 {len(expect)} 个 → 新工程可达 {len(got)} 个"
+            + (f"；缺 {len(lacking)}" if lacking else "")
+            + (f"；多 {len(surplus)}" if surplus else ""),
+        )
+        res.add(
+            "选中序列完好",
+            len(packed.visible_sequences()) == max(1, len(plan.sequence_names)),
+            f"包里可见 {len(packed.visible_sequences())} 条序列："
+            + "、".join(i.name for i in packed.visible_sequences())[:80],
+        )
+    else:
+        # 2. Media 条数一致
+        res.add(
+            "媒体条数一致",
+            len(packed.media_files) == len(original.media_files),
+            f"原 {len(original.media_files)} → 新 {len(packed.media_files)}",
+        )
 
-    # 3. 素材箱条数一致
-    res.add(
-        "素材箱层级一致",
-        len(packed.bins) == len(original.bins),
-        f"原 {len(original.bins)} 个箱 → 新 {len(packed.bins)} 个箱",
-    )
+        # 3. 素材箱条数一致
+        res.add(
+            "素材箱层级一致",
+            len(packed.bins) == len(original.bins),
+            f"原 {len(original.bins)} 个箱 → 新 {len(packed.bins)} 个箱",
+        )
 
-    # 4. 每条路径都落地
-    missing = [fp for fp in packed.media_files if not os.path.exists(fp)]
+    # 4. 每条路径都落地（裁剪模式下只看可达的那批）
+    check_files = sorted(packed.reachable_files()) if plan.prune else packed.media_files
+    missing = [fp for fp in check_files if not os.path.exists(fp)]
     res.add(
         "全部媒体在线",
         not missing,
@@ -83,6 +113,8 @@ def verify_package(
     # 5. 路径已指向新位置
     root = str(Path(plan.output_root).resolve()).lower()
     outside = [fp for fp in packed.media_files if not fp.lower().startswith(root)]
+    if plan.prune:
+        outside = [fp for fp in outside if norm_key(fp) in packed.reachable_files()]
     res.add(
         "路径已全部指向输出目录",
         not outside,
@@ -144,6 +176,10 @@ def write_report(
     a("")
     a("| 项 | 值 |")
     a("|---|---|")
+    if plan.sequence_names:
+        a(f"| 打包序列 | {'、'.join(plan.sequence_names)} |")
+    else:
+        a("| 打包序列 | 全部 |")
     a(f"| 素材箱数 | {stats.get('bin_count', 0)} |")
     a(f"| 面板项目项 | {stats.get('bin_entries', 0)} |")
     a(f"| 物理文件（去重后） | {stats.get('unique_files', 0)} |")
@@ -151,6 +187,8 @@ def write_report(
     a(f"| 计划体积 | {plan.total_bytes / 1024**3:.2f} GB |")
     a(f"| 未匹配文件 | {stats.get('unmatched', 0)} |")
     a(f"| 离线文件 | {stats.get('offline', 0)} |")
+    if plan.prune:
+        a(f"| 新工程摘除条目 | {len(plan.drop_item_uids)} |")
     a("")
 
     if copy_res is not None:
@@ -179,6 +217,9 @@ def write_report(
         a(f"| 绝对路径替换 | {relink_res.replaced_abs} 处 |")
         a(f"| 相对路径替换 | {relink_res.replaced_rel} 处 |")
         a(f"| 本机临时路径清空 | {relink_res.cleared_temp} 处 |")
+        if relink_res.pruned_items or relink_res.pruned_bins:
+            a(f"| 摘除素材箱条目 | {relink_res.pruned_items} 个 |")
+            a(f"| 摘除空素材箱 | {relink_res.pruned_bins} 个 |")
         a("")
         for w in relink_res.warnings:
             a(f"> ⚠️ {w}")

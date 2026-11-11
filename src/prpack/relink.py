@@ -44,6 +44,8 @@ class RelinkResult:
     replaced_abs: int = 0
     replaced_rel: int = 0
     cleared_temp: int = 0
+    pruned_items: int = 0
+    pruned_bins: int = 0
     untouched: List[str] = field(default_factory=list)   # 一条都没替换到的源文件
     warnings: List[str] = field(default_factory=list)
 
@@ -58,6 +60,7 @@ def relink_project(
     output_project: Optional[Path] = None,
     update_relative: bool = True,
     clear_temp_paths: bool = True,
+    model=None,
 ) -> RelinkResult:
     """生成改好路径的新工程。不碰原工程。"""
     src_project = Path(plan.project_path)
@@ -67,6 +70,20 @@ def relink_project(
     xml_text = gzip.decompress(raw).decode("utf-8")
 
     res = RelinkResult()
+
+    # ---- 0. 裁剪：先摘条目，再改路径 ----
+    # 顺序不能反：路径替换是按「plan 里的文件」逐条替换的，
+    # 先摘掉不需要的条目，能少改一大堆即将消失的对象。
+    if plan.drop_item_uids:
+        from .prune import prune_items
+        from .prproj import ProjectModel
+
+        mdl = model if model is not None else ProjectModel.load(src_project)
+        pr = prune_items(xml_text, mdl, plan.drop_item_uids)
+        xml_text = pr.text
+        res.pruned_items = pr.removed_items
+        res.pruned_bins = pr.removed_bins
+        res.warnings.extend(pr.warnings)
 
     # ---- 1. 绝对路径 ----
     abs_map: Dict[str, str] = {}

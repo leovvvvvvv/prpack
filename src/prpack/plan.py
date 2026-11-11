@@ -58,6 +58,12 @@ class Plan:
     warnings: List[str] = field(default_factory=list)
     version: int = PLAN_VERSION
 
+    # 序列范围（一次只打选中的序列，其余不复制、并从新工程里摘掉）
+    sequence_names: List[str] = field(default_factory=list)
+    sequence_uids: List[str] = field(default_factory=list)
+    drop_item_uids: List[str] = field(default_factory=list)
+    prune: bool = False
+
     # ---- 汇总 ----
 
     @property
@@ -76,6 +82,8 @@ class Plan:
                 "project": self.project_path,
                 "root": self.output_root,
                 "mode": self.mode,
+                "seqs": sorted(self.sequence_uids),
+                "prune": self.prune,
                 "files": sorted(f"{f.src}|{f.dst_rel}|{f.size}" for f in self.files),
             },
             ensure_ascii=False,
@@ -148,8 +156,14 @@ def build_plan(
     mode: str = "bin",
     include_deps: bool = True,
     skip_unmatched: bool = False,
+    sequence_uids: Optional[List[str]] = None,
+    prune: Optional[bool] = None,
 ) -> Plan:
-    """生成打包计划。只读，不复制任何文件。"""
+    """生成打包计划。只读，不复制任何文件。
+
+    sequence_uids 给了就只打这些序列（含嵌套递归）用到的素材；
+    prune 默认在「选了序列」时为 True —— 新工程里把没选中的序列和没用到的素材摘掉。
+    """
     output_root = Path(output_root).resolve()
     plan = Plan(
         project_path=str(model.path),
@@ -158,10 +172,49 @@ def build_plan(
         mode=mode,
     )
 
+    # 0. 序列范围
+    scope_files: Optional[Set[str]] = None
+    scope_seqs: Set[str] = set()
+    if sequence_uids:
+        files, seqs, missing = model.media_closure(sequence_uids)
+        if missing:
+            plan.warnings.append(f"这些序列没认出来，已忽略：{missing}")
+        if not files:
+            raise ValueError(
+                "选中的序列没有解析出任何素材。可能是序列是空的，"
+                "或者素材链接断了 —— 请先在 PR 里检查这条序列。"
+            )
+        scope_files, scope_seqs = files, seqs
+        names = [i.name for i in model.visible_sequences() if i.uid in seqs]
+        plan.sequence_uids = sorted(seqs)
+        plan.sequence_names = names
+        excluded = [i for i in model.visible_sequences() if i.uid not in seqs]
+        if excluded:
+            plan.warnings.append(
+                f"未选中的 {len(excluded)} 条序列不会打包："
+                + "、".join(i.name for i in excluded)
+            )
+
+    if prune is None:
+        prune = bool(sequence_uids)
+    plan.prune = prune
+
+    if prune:
+        keep_files = scope_files if scope_files is not None else {
+            k for i in model.visible_sequences() for k in i.files
+        }
+        keep_seqs = scope_seqs if scope_seqs else {i.uid for i in model.visible_sequences()}
+        drop, _keep = model.prune_sets(keep_files, keep_seqs)
+        plan.drop_item_uids = drop
+        plan.warnings.append(f"新工程会摘掉 {len(drop)} 个素材箱条目（未选中序列 + 未用到素材）")
+
+    def in_scope(fp: str) -> bool:
+        return scope_files is None or norm_key(fp) in scope_files
+
     # 1. 收集：物理文件 → 候选落位
     cand: Dict[str, List[Tuple[Tuple[str, ...], str]]] = {}
     for e in model.media_items():
-        if not e.filepath:
+        if not e.filepath or not in_scope(e.filepath):
             continue
         cand.setdefault(norm_key(e.filepath), []).append((e.bin_path, e.name))
 
@@ -201,11 +254,18 @@ def build_plan(
             )
         )
 
-    # 4. 未认领的物理文件：宁可多收，绝不丢
-    for fp in model.unmatched_media():
+    # 4. 兜底：范围内但没被任何条目认领的文件，宁可多收，绝不丢
+    covered = {norm_key(f.src) for f in plan.files}
+    if scope_files is not None:
+        extra = [fp for fp in model.media_files
+                 if norm_key(fp) in scope_files and norm_key(fp) not in covered]
+    else:
+        extra = [] if skip_unmatched else model.unmatched_media()
         if skip_unmatched:
-            plan.warnings.append(f"跳过未匹配文件：{fp}")
-            continue
+            for fp in model.unmatched_media():
+                plan.warnings.append(f"跳过未匹配文件：{fp}")
+
+    for fp in extra:
         rel = f"_未匹配素材/{sanitize_name(PurePath(fp).name, 'file')}"
         rel = _dedupe_dst(rel, fp, taken, plan.conflicts)
         plan.files.append(
