@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prpack"
+version = "0.1.0"
+description = "Pack an Adobe Premiere Pro project with its media, organized by bin structure — a sane replacement for Premiere's Project Manager."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "prpack contributors" }]
+keywords = ["premiere", "premiere-pro", "prproj", "archive", "consolidate", "media-management"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Topic :: Multimedia :: Video",
+]
+
+[project.urls]
+Homepage = "https://github.com/OWNER/prpack"
+Issues = "https://github.com/OWNER/prpack/issues"
+
+[project.scripts]
+prpack = "prpack.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+prpack = ["py.typed"]

@@ -1,0 +1,164 @@
+# prpack
+
+**Pack an Adobe Premiere Pro project with its media — without the bloat, without losing your bin structure.**
+
+`prpack` is a small, dependency-free Python tool that replaces Premiere Pro's built-in **Project Manager** for the two things it gets wrong.
+
+---
+
+## The problem
+
+Premiere's Project Manager (`File → Project Manager → Collect Files and Copy to a New Location`) has two long-standing defects that Adobe has never fixed — the oldest reports date back to 2007:
+
+1. **It duplicates media per subclip.**
+   Project Manager collects by *project item*, not by *physical file*. Cut one master clip into 12 subclips and you get **12 full copies** of the master file. A 13 GB master subclipped 10 times becomes 11 × 13 GB.
+2. **It always flattens the output.**
+   Every file lands in a single directory. Neither your Premiere bin structure nor your folder structure on disk is preserved.
+
+Secondary issues: `Exclude Unused Clips` frequently misbehaves, and `Unknown error` is common on large projects.
+
+Real-world measurement (a 52-minute event project, Premiere 26.x):
+
+| | Project Manager | prpack |
+|---|---|---|
+| Source files on disk | 112 | 112 |
+| Subclips in project | 198 | — |
+| Media files copied | **up to 198** | **112** |
+| Output folder layout | flat | bin hierarchy |
+
+---
+
+## What it does
+
+- **Deduplicates by physical file.** 198 subclips sharing 112 files produce 112 copies. Nothing more.
+- **Preserves your bin hierarchy on disk** (`--mode bin`, default). Or the original disk layout (`--mode disk`), or flat (`--mode flat`).
+- **Rewrites the project's media paths** so the packed project opens with zero offline media.
+- **Shows you a plan first.** `prpack plan` writes a `plan.json` you can read before anything is copied.
+- **Verifies the result.** After packing, it re-opens the new project and checks that every path resolves.
+
+---
+
+## Install
+
+Requires Python 3.10+. No third-party dependencies.
+
+```bash
+pip install -e .
+```
+
+Or run from source without installing:
+
+```bash
+PYTHONPATH=src python -m prpack.cli --help
+```
+
+---
+
+## Usage
+
+### 1. Look before you leap
+
+```bash
+prpack inspect "D:\media\project\my_project.prproj"
+```
+
+```
+工程：my_project.prproj
+  素材箱数        4
+  面板项目项      117
+  序列项          5
+  媒体项          112
+  物理文件(去重)  112
+  未匹配文件      0
+  离线文件        0
+
+素材箱层级：
+  01_footage
+  02_music
+  03_reference
+  04_sfx
+```
+
+### 2. Generate a plan
+
+```bash
+prpack plan "D:\media\project\my_project.prproj" -o "D:\archive\my_project_packed"
+```
+
+This writes `my_project_plan.json` next to the output folder. **Nothing is copied yet.** Read it, check the destinations.
+
+### 3. Execute
+
+```bash
+prpack run "D:\archive\my_project_plan.json"
+```
+
+Copies the media, rewrites the project as `my_project_packed.prproj`, verifies it, and writes `打包报告.md`.
+
+### Or do it in one step
+
+```bash
+prpack pack "D:\media\project\my_project.prproj" -o "D:\archive\my_project_packed"
+```
+
+### Options
+
+| Flag | Meaning |
+|---|---|
+| `--mode bin\|disk\|flat` | Output layout. `bin` (default) mirrors your Premiere bins. |
+| `--no-deps` | Skip dependency collection (`.sidecar`, `.RDC`, `.aep`). |
+| `--skip-unmatched` | Don't collect media that no bin item claims. |
+| `--no-relative` | Don't rewrite `RelativePath` entries. |
+| `--force` | Proceed even if the output folder is not empty. **Risky.** |
+
+---
+
+## How it works
+
+1. **Parse.** A `.prproj` is gzip-compressed XML. `prpack` builds two lookup tables — `ObjectID` and `ObjectUID` are *separate namespaces* and must never be merged, or references resolve to unrelated objects.
+2. **Collect the physical file set** from every `<Media><FilePath>` element. This is the authoritative list of files that must be copied.
+3. **Collect the bin tree** from `RootProjectItem` / `BinProjectItem` → `ProjectItemContainer/Items/Item`.
+4. **Match** bin entries to files by name. Anything unmatched still gets copied, into `_未匹配素材/`, and is flagged in the report — better a wrong folder than a lost file.
+5. **Copy** with resume support (`skip if destination exists with the same size`).
+6. **Rewrite paths by literal text replacement**, never by re-serializing the XML. `ElementTree` round-trips change attribute order and namespace handling, and Premiere is not forgiving about it.
+7. **Verify** by re-opening the packed project and resolving every path.
+
+`FilePath` (absolute) and `RelativePath` (relative) are both rewritten, so the package survives a drive-letter change.
+
+### Why not lossless trim?
+
+Premiere's Project Manager can transcode/trim; so can commercial tools like PlumePack. `prpack` deliberately does **not** trim in v1: lossless trimming of long-GOP H.264/HEVC requires frame-accurate surgery on the container, which is a different (and much harder) project. `prpack` gives you a *correct* package at the true source size; use a trim tool if you need it smaller.
+
+---
+
+## Safety design
+
+- **Never overwrites your source project.** Output is always a new `_packed.prproj`.
+- **Refuses non-empty output folders** unless you pass `--force`.
+- **Plan fingerprint** is checked at execution time — if the plan changed after you reviewed it, the run aborts.
+- **Writes `.part` then renames**, so an interrupted copy never looks complete.
+- **XML is validated before writing.** If the rewritten project doesn't parse, nothing is written.
+
+---
+
+## Known limitations
+
+- Only **files referenced by `<Media>`** are collected. Media used solely inside nested `.prproj` sub-projects is not traversed.
+- Bin items matched **by name**; a media item renamed inside Premiere may fall back to `_未匹配素材/`.
+- Effects, presets, fonts and MOGRT dependencies are not collected.
+- Tested on Windows with Premiere 26.x. The XML format is not officially documented and may change between major versions.
+
+---
+
+## Roadmap
+
+- [ ] CEP panel (in-Premiere GUI)
+- [ ] `--mode bin` for nested bins with duplicate names
+- [ ] Optional lossless trim for intra-frame codecs (ProRes / DNxHD)
+- [ ] Dry-run HTML report
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).

@@ -1,0 +1,31 @@
+# 编译产物
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# 测试产物
+.pytest_cache/
+_prpack_test/
+
+# 本地配置与凭证 —— 绝不入库
+*.local.json
+.gh_token.txt
+.gh_token
+*.token
+.env
+
+# 真实工程与素材 —— 绝不入库
+*.prproj
+*.prproj.bak
+!tests/fixtures/*.prproj
+*.mp4
+*.mov
+*.mxf
+*.braw
+*.r3d
+*.wav
+*.mp3
