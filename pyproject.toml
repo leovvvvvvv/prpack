@@ -8,14 +8,14 @@ version = "0.1.0"
 description = "Pack an Adobe Premiere Pro project with its media, organized by bin structure — a sane replacement for Premiere's Project Manager."
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+license = { text = "GPL-3.0-only" }
 authors = [{ name = "prpack contributors" }]
 keywords = ["premiere", "premiere-pro", "prproj", "archive", "consolidate", "media-management"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: Console",
     "Intended Audience :: End Users/Desktop",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Operating System :: Microsoft :: Windows",
     "Operating System :: MacOS",
     "Programming Language :: Python :: 3",

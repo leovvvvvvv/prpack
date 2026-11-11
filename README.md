@@ -161,4 +161,16 @@ Premiere's Project Manager can transcode/trim; so can commercial tools like Plum
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+**GNU GPL v3.0** — see [LICENSE](LICENSE).
+
+This is a copyleft license. In plain terms:
+
+- **Use it however you want**, including commercially, on your own projects and for clients. Running it locally is not distribution, so nothing is triggered.
+- **If you distribute it** — ship a fork, bundle it into a product, or build on top of its code — the whole derivative must be released under the GPL v3 as well, with source available. You cannot take this code, wrap it in a closed-source product, and ship that.
+- **No warranty.** Packed projects are your responsibility; keep a backup of the original until you have verified the result.
+
+If you need to embed prpack in a proprietary product, that is a separate conversation — open an issue.
+
+---
+
+**中文摘要**：本项目采用 GPL-3.0。自己用、给客户做项目都不受限制；但**一旦分发**（发自己的分支、打包进产品、在它的代码上做衍生工具），衍生作品也必须以 GPL-3.0 开源。不接受把这份代码闭源包装后当作商业软件出售。

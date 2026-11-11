@@ -38,11 +38,34 @@ def _gb(n: int) -> str:
     return f"{n / 1024 ** 3:.2f} GB"
 
 
+def _resolve_project(raw: str) -> Path:
+    """把面板传来的路径落成一个真实存在的 .prproj。
+
+    Premiere Pro 的 app.project.path 在不同版本/写法下语义不一致：多数版本
+    给的是「.prproj 完整路径」，也有按目录处理的写法，于是会拼出
+    `xxx.prproj\\xxx.prproj` 这种双份路径。这里做一次容错回退，
+    错误信息也直接说人话，别让用户看 Errno 2。
+    """
+    p = Path(raw)
+    if p.is_file():
+        return p
+
+    # 双份路径：上一级才是真工程
+    parent = p.parent
+    if parent.suffix.lower() == ".prproj" and parent.is_file():
+        return parent
+
+    raise FileNotFoundError(
+        f"找不到工程文件：{p}\n"
+        f"请确认 PR 里的工程已存盘（Ctrl+S），且面板顶部显示的路径是 .prproj 结尾。"
+    )
+
+
 # ---------------------------------------------------------------- inspect
 
 def do_inspect(project: str) -> int:
     emit("log", msg="正在解析工程…")
-    model = ProjectModel.load(Path(project))
+    model = ProjectModel.load(_resolve_project(project))
     s = model.stats()
 
     tree = []
@@ -77,7 +100,7 @@ def do_plan(project: str, output: str, mode: str = "bin",
             skip_unmatched: bool = False, include_deps: bool = True,
             plan_out: str | None = None) -> int:
     emit("log", msg="正在解析工程…")
-    model = ProjectModel.load(Path(project))
+    model = ProjectModel.load(_resolve_project(project))
 
     emit("log", msg="正在计算去重与目标路径…")
     plan = build_plan(

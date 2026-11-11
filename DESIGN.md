@@ -172,7 +172,7 @@ panel/         （Phase 2）CEP 扩展：HTML/JS 面板 + ExtendScript 取箱树
 | 项 | 方案 |
 |---|---|
 | 仓库名 | `prpack`（中性，不含客户信息） |
-| License | MIT |
+| License | **GPL-3.0**（传染性开源：用了本项目的代码做衍生分发，衍生作品也必须 GPL-3.0 开源） |
 | 语言 | Python 3.10+，零第三方依赖 |
 | 目录 | `src/prpack/` + `tests/` + `docs/` |
 | 测试素材 | **全部用合成工程**：脚本生成一个只含 2 个色条素材 + 3 个子剪辑的最小 `.prproj`，不碰任何真实项目 |
