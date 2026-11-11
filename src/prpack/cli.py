@@ -27,7 +27,8 @@ def _gb(n: int) -> str:
 
 def cmd_inspect(args: argparse.Namespace) -> int:
     model = ProjectModel.load(Path(args.project))
-    s = model.stats()
+    s = model.stats(with_sizes=True)
+    sizes = s.get("_sizes", {})
 
     print(f"工程：{s['project']}")
     print(f"  素材箱数        {s['bin_count']}")
@@ -35,8 +36,21 @@ def cmd_inspect(args: argparse.Namespace) -> int:
     print(f"  序列项          {s['sequence_items']}")
     print(f"  媒体项          {s['media_items']}")
     print(f"  物理文件(去重)  {s['unique_files']}")
+    print(f"  总体积          {_gb(s['total_bytes'])}")
     print(f"  未匹配文件      {s['unmatched']}")
     print(f"  离线文件        {s['offline']}")
+
+    seqs = model.visible_sequences()
+    if seqs:
+        width = min(34, max(len(i.name) for i in seqs) + 2)
+        print("\n序列（--sequences 只打勾选的，嵌套自动展开）：")
+        for i in seqs:
+            got = sum(sizes.get(k, 0) for k in i.files)
+            got = max(got, 0)
+            tag = ""
+            if i.nested_names:
+                tag = "  含嵌套: " + "、".join(i.nested_names[:3])
+            print(f"  {i.name:<{width}} {i.file_count:>5} 个文件  {_gb(got):>10}{tag}")
 
     if model.bins:
         print("\n素材箱层级：")

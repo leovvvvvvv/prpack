@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>prpack</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="head">
+    <div class="brand">
+      <span class="dot"></span>
+      <span class="title">prpack</span>
+      <span class="ver" id="ver">0.2.1</span>
+    </div>
+    <div class="proj" id="projName">正在读取工程…</div>
+    <div class="projPath" id="projPath"></div>
+  </header>
+
+  <section class="stats" id="stats">
+    <div class="stat"><b id="sFiles">—</b><span>物理文件</span></div>
+    <div class="stat"><b id="sSize">—</b><span>总体积</span></div>
+    <div class="stat"><b id="sBins">—</b><span>素材箱</span></div>
+    <div class="stat"><b id="sOffline">—</b><span>离线</span></div>
+  </section>
+
+  <section class="seqs">
+    <div class="secTitle">
+      <span>打包序列</span>
+      <span class="hint" id="seqHint">先分析工程</span>
+    </div>
+    <div class="seqTools">
+      <button id="btnSeqAll" class="tiny">全选</button>
+      <button id="btnSeqNone" class="tiny">全不选</button>
+      <span class="tinyHint">只打勾选序列用到的素材，其余从新工程里摘掉</span>
+    </div>
+    <div class="seqList" id="seqList">
+      <div class="empty">点「分析工程」后显示</div>
+    </div>
+  </section>
+
+  <section class="bins">
+    <div class="secTitle">
+      <span>素材箱结构</span>
+      <span class="hint" id="binHint"></span>
+    </div>
+    <div class="binList" id="binList">
+      <div class="empty">点「分析工程」后显示</div>
+    </div>
+  </section>
+
+  <section class="out">
+    <label>输出目录</label>
+    <div class="row">
+      <input id="outDir" type="text" spellcheck="false" placeholder="选择或输入输出目录">
+      <button id="btnPick" class="ghost" title="选择目录">选择</button>
+    </div>
+  </section>
+
+  <section class="actions">
+    <button id="btnAnalyze" class="primary">分析工程</button>
+    <button id="btnPack" class="go" disabled>开始打包</button>
+  </section>
+
+  <section class="progress" id="progressWrap">
+    <div class="bar" id="bar"><div class="fill" id="fill"></div></div>
+    <div class="pmeta">
+      <span id="pText">待命</span>
+      <span class="pmRight">
+        <span id="pCount"></span>
+        <span id="pTime"></span>
+      </span>
+    </div>
+    <div class="pcur" id="pCur"></div>
+  </section>
+
+  <section class="log">
+    <div class="secTitle"><span>日志</span><span class="hint" id="logClear">清空</span></div>
+    <div class="logBody" id="log"></div>
+  </section>
+
+  <script src="CSInterface.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>

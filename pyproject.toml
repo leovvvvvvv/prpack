@@ -23,14 +23,11 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/OWNER/prpack"
-Issues = "https://github.com/OWNER/prpack/issues"
+Homepage = "https://github.com/leovvvvvvv/prpack"
+Issues = "https://github.com/leovvvvvvv/prpack/issues"
 
 [project.scripts]
 prpack = "prpack.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools.package-data]
-prpack = ["py.typed"]

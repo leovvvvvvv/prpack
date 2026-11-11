@@ -506,7 +506,10 @@ class ProjectModel:
         nested_all = {u for i in infos.values() for u in i.nested}
         for info in infos.values():
             info.is_nested = info.uid in nested_all
-            info.nested_names = [infos[u].name if u in infos else u[:8] for u in info.nested]
+            # 同一条序列可能在时间线上被嵌套多次，展示时去重（保留首次出现顺序）
+            info.nested_names = list(dict.fromkeys(
+                infos[u].name if u in infos else u[:8] for u in info.nested
+            ))
 
         self.sequence_infos = sorted(
             infos.values(), key=lambda i: (len(i.bin_path), i.bin_path, i.name)
@@ -614,22 +617,28 @@ class ProjectModel:
         """需要复制的媒体条目（排除序列）。"""
         return [e for e in self.entries if e.filepath and not e.is_sequence]
 
-    def stats(self) -> dict:
+    def stats(self, with_sizes: bool = False) -> dict:
+        """工程规模统计。
+
+        with_sizes=True 时额外带回 ``_sizes``（norm_key → 字节数，-1 表示离线），
+        让调用方按序列切体积时不用再 stat 一遍 —— 网络盘上每多扫一遍就是几秒。
+        """
         items = self.media_items()
-        # 一次 stat 同时拿到「体积」和「离线」—— 网络盘上每多扫一遍就多等一秒
+        # 一次 stat 同时拿到「体积」和「离线」—— 网络盘上每多扫一遍就多等一秒。
+        # 必须按 media_files 全集扫：有些文件被 <Media> 引用但没有任何素材箱条目，
+        # 只按条目统计会少算它们的体积（实测能差好几个 GB）。
         sizes: Dict[str, int] = {}
-        missing: List[BinEntry] = []
-        for e in items:
-            k = norm_key(e.filepath)
-            if k not in sizes:
-                try:
-                    sizes[k] = os.path.getsize(e.filepath)
-                except OSError:
-                    sizes[k] = -1
-            if sizes[k] < 0:
-                missing.append(e)
+        for fp in self.media_files:
+            k = norm_key(fp)
+            if k in sizes:
+                continue
+            try:
+                sizes[k] = os.path.getsize(fp)
+            except OSError:
+                sizes[k] = -1
+        missing = [e for e in items if sizes.get(norm_key(e.filepath), -1) < 0]
         total_bytes = sum(v for v in sizes.values() if v > 0)
-        return {
+        out = {
             "project": self.path.name,
             "project_path": str(self.path),
             "project_size": self.path.stat().st_size,
@@ -645,3 +654,6 @@ class ProjectModel:
             "offline": len(missing),
             "unmatched_names": [e.name for e in self.entries if not e.filepath and not e.is_sequence][:10],
         }
+        if with_sizes:
+            out["_sizes"] = sizes
+        return out

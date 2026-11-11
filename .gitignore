@@ -30,5 +30,3 @@ _prpack_test/
 *.wav
 *.mp3
 
-# CEP 面板：本机测试通过前不发布
-/panel/

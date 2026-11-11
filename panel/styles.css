@@ -1,0 +1,320 @@
+/* prpack 面板样式 —— 跟随 Premiere 的深色界面，紧凑排版 */
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  height: 100%;
+  background: #1f1f1f;
+  color: #d6d6d6;
+  font-family: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 12px;
+  overflow: hidden;
+  user-select: none;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+}
+
+/* ---------- 头部 ---------- */
+.head { flex: 0 0 auto; }
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #4ade80;
+  box-shadow: 0 0 6px rgba(74, 222, 128, .7);
+}
+
+.title { font-size: 13px; font-weight: 600; letter-spacing: .3px; color: #f0f0f0; }
+
+.ver {
+  font-size: 10px; color: #8a8a8a;
+  border: 1px solid #3a3a3a; border-radius: 8px;
+  padding: 0 6px; line-height: 15px;
+}
+
+.proj { font-size: 12px; color: #e8e8e8; word-break: break-all; }
+.projPath { font-size: 10px; color: #7a7a7a; word-break: break-all; margin-top: 2px; }
+
+/* ---------- 统计 ---------- */
+.stats {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.stat {
+  background: #2a2a2a;
+  border: 1px solid #333;
+  border-radius: 5px;
+  padding: 8px 4px;
+  text-align: center;
+}
+
+.stat b { display: block; font-size: 15px; font-weight: 600; color: #f5f5f5; }
+.stat span { display: block; font-size: 10px; color: #888; margin-top: 2px; }
+
+.stat.warn b { color: #fbbf24; }
+.stat .bad { color: #f87171; }
+
+/* ---------- 区块标题 ---------- */
+.secTitle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  color: #9a9a9a;
+  padding-bottom: 5px;
+  border-bottom: 1px solid #333;
+  margin-bottom: 6px;
+}
+
+.hint { font-size: 10px; color: #6e6e6e; cursor: default; }
+#logClear { cursor: pointer; }
+#logClear:hover { color: #adadad; }
+
+/* ---------- 序列勾选 ---------- */
+.seqs {
+  flex: 0 0 auto;
+  max-height: 168px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.seqTools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 5px;
+}
+
+button.tiny {
+  padding: 2px 8px;
+  font-size: 10px;
+  line-height: 15px;
+  border-radius: 3px;
+  background: #2a2a2a;
+}
+
+.tinyHint { font-size: 10px; color: #666; flex: 1 1 auto; text-align: right; }
+
+.seqList { overflow-y: auto; flex: 1 1 auto; }
+
+.seqRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.seqRow:hover { background: rgba(255, 255, 255, .05); }
+
+.seqRow input[type="checkbox"] {
+  flex: 0 0 auto;
+  accent-color: #1473e6;
+  cursor: pointer;
+}
+
+.seqName {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #dcdcdc;
+}
+
+.seqMeta { flex: 0 0 auto; font-size: 10px; color: #8a8a8a; }
+
+.tag {
+  flex: 0 0 auto;
+  font-size: 9px;
+  color: #7cc4ff;
+  border: 1px solid #2f4a63;
+  border-radius: 8px;
+  padding: 0 5px;
+  line-height: 14px;
+}
+
+/* ---------- 素材箱 ---------- */
+.bins {
+  flex: 1 1 auto;
+  min-height: 90px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.binList {
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+
+.binRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+}
+
+.binRow:nth-child(odd) { background: rgba(255, 255, 255, .025); }
+.binRow .cnt { color: #8a8a8a; }
+
+.empty { color: #666; font-size: 11px; padding: 8px 6px; }
+
+/* ---------- 输出目录 ---------- */
+.out { flex: 0 0 auto; }
+.out label { display: block; font-size: 11px; color: #9a9a9a; margin-bottom: 5px; }
+
+.row { display: flex; gap: 6px; }
+
+input[type="text"] {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: #171717;
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+  color: #e0e0e0;
+  padding: 6px 8px;
+  font-size: 11px;
+  font-family: inherit;
+  user-select: text;
+}
+
+input[type="text"]:focus { outline: none; border-color: #1473e6; }
+
+button {
+  font-family: inherit;
+  font-size: 11px;
+  border-radius: 4px;
+  border: 1px solid #3a3a3a;
+  background: #333;
+  color: #dcdcdc;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background .12s, border-color .12s;
+}
+
+button:hover:not(:disabled) { background: #3d3d3d; border-color: #4a4a4a; }
+button:disabled { opacity: .45; cursor: default; }
+
+button.primary { background: #2c2c2c; }
+button.primary:hover:not(:disabled) { background: #383838; }
+
+button.go {
+  background: #1473e6;
+  border-color: #1473e6;
+  color: #fff;
+  font-weight: 600;
+}
+button.go:hover:not(:disabled) { background: #1a82f7; border-color: #1a82f7; }
+
+button.ghost { flex: 0 0 auto; }
+
+/* ---------- 操作按钮 ---------- */
+.actions { flex: 0 0 auto; display: flex; gap: 6px; }
+.actions button { flex: 1 1 0; padding: 8px 10px; }
+
+/* ---------- 进度 ---------- */
+.progress { flex: 0 0 auto; }
+
+.bar {
+  height: 6px;
+  background: #2a2a2a;
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #1473e6, #4ade80);
+  transition: width .18s ease-out;
+}
+
+/* 阶段耗时不可预知时（解析、展开序列）走不确定态，动起来就不像卡死 */
+.bar.indet .fill {
+  width: 34% !important;
+  transition: none;
+  animation: prpackIndet 1.15s ease-in-out infinite;
+}
+
+@keyframes prpackIndet {
+  0%   { transform: translateX(-115%); }
+  100% { transform: translateX(400%); }
+}
+
+.pmeta {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 10px;
+  color: #888;
+  margin-top: 5px;
+  gap: 8px;
+}
+
+#pText { color: #a8a8a8; }
+
+.pmRight { flex: 0 0 auto; display: flex; gap: 8px; }
+#pTime { color: #6e6e6e; font-variant-numeric: tabular-nums; }
+
+.pcur {
+  font-size: 9.5px;
+  color: #5e5e5e;
+  margin-top: 3px;
+  height: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- 日志 ---------- */
+.log {
+  flex: 0 0 auto;
+  height: 108px;
+  display: flex;
+  flex-direction: column;
+}
+
+.logBody {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  background: #171717;
+  border: 1px solid #2c2c2c;
+  border-radius: 4px;
+  padding: 6px;
+  font-family: Consolas, "Courier New", monospace;
+  font-size: 10.5px;
+  line-height: 1.55;
+  color: #a8a8a8;
+  user-select: text;
+}
+
+.logBody .ok { color: #4ade80; }
+.logBody .err { color: #f87171; }
+.logBody .warn { color: #fbbf24; }
+.logBody .dim { color: #6e6e6e; }
+
+/* ---------- 滚动条 ---------- */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #3a3a3a; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #4a4a4a; }
